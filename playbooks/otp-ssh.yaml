@@ -1,0 +1,55 @@
+- hosts: ssh_servers
+  become: yes
+  tasks:
+    - name: install openssh server
+      apt:
+        name: openssh-server
+        state: present
+
+    - name: install google authenticator
+      apt:
+        name: libpam-google-authenticator
+        state: present
+
+    - name: Ensure PAM for SSH is configured properly
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/sshd
+        state: present
+        line: auth required pam_google_authenticator.so nullok
+
+    - name: Adding comment for pam_google_authenticator
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/sshd
+        state: present
+        insertbefore: '^auth required pam_google_authenticator.so nullok'
+        line: '# Installing the Google Authenticator PAM module'
+
+    - name: Add ChallengeResponseAuthentication yes config to /etc/ssh/sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: ^(#*|# *)?ChallengeResponseAuthentication
+        line: ChallengeResponseAuthentication yes
+      notify: restart openssh-server
+
+    - name: Add AuthenticationMethods global config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        state: present
+        regexp: ^(#*|# *)?AuthenticationMethods
+        line: AuthenticationMethods keyboard-interactive
+      notify: restart openssh-server
+
+    - name: Add Match block to SSH config
+      blockinfile:
+        path: /etc/ssh/sshd_config
+        block: |
+          Match User root
+            AuthenticationMethods publickey keyboard-interactive
+          Match all
+      notify: restart openssh-server
+
+  handlers:
+  - name: restart openssh-server
+    service:
+      name: sshd
+      state: restarted
